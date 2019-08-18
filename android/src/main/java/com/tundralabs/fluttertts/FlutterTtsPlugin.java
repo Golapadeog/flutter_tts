@@ -1,6 +1,7 @@
 package com.tundralabs.fluttertts;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -28,68 +29,67 @@ public class FlutterTtsPlugin implements MethodCallHandler {
   private final String googleTtsEngine = "com.google.android.tts";
   String uuid;
   Bundle bundle;
+  private final Registrar registrar;
 
   /** Plugin registration. */
-  private FlutterTtsPlugin(Context context, MethodChannel channel) {
+  private FlutterTtsPlugin(Registrar registrar, MethodChannel channel) {
     this.channel = channel;
     this.channel.setMethodCallHandler(this);
+    this.registrar = registrar;
 
     handler = new Handler(Looper.getMainLooper());
     bundle = new Bundle();
-    tts = new TextToSpeech(context.getApplicationContext(), onInitListener, googleTtsEngine);
+    tts = new TextToSpeech(registrar.activeContext().getApplicationContext(), onInitListener, googleTtsEngine);
   };
 
-  private UtteranceProgressListener utteranceProgressListener =
-      new UtteranceProgressListener() {
-        @Override
-        public void onStart(String utteranceId) {
-          invokeMethod("speak.onStart", true);
-        }
+  private UtteranceProgressListener utteranceProgressListener = new UtteranceProgressListener() {
+    @Override
+    public void onStart(String utteranceId) {
+      invokeMethod("speak.onStart", true);
+    }
 
-        @Override
-        public void onDone(String utteranceId) {
-          invokeMethod("speak.onComplete", true);
-        }
+    @Override
+    public void onDone(String utteranceId) {
+      invokeMethod("speak.onComplete", true);
+    }
 
-        @Override
-        @Deprecated
-        public void onError(String utteranceId) {
-          invokeMethod("speak.onError", "Error from TextToSpeech");
-        }
+    @Override
+    @Deprecated
+    public void onError(String utteranceId) {
+      invokeMethod("speak.onError", "Error from TextToSpeech");
+    }
 
-        @Override
-        public void onError(String utteranceId, int errorCode) {
-          invokeMethod("speak.onError", "Error from TextToSpeech - " + errorCode);
-        }
-      };
+    @Override
+    public void onError(String utteranceId, int errorCode) {
+      invokeMethod("speak.onError", "Error from TextToSpeech - " + errorCode);
+    }
+  };
 
-  private TextToSpeech.OnInitListener onInitListener =
-      new TextToSpeech.OnInitListener() {
-        @Override
-        public void onInit(int status) {
-          if (status == TextToSpeech.SUCCESS) {
-            tts.setOnUtteranceProgressListener(utteranceProgressListener);
-            invokeMethod("tts.init", true);
+  private TextToSpeech.OnInitListener onInitListener = new TextToSpeech.OnInitListener() {
+    @Override
+    public void onInit(int status) {
+      if (status == TextToSpeech.SUCCESS) {
+        tts.setOnUtteranceProgressListener(utteranceProgressListener);
+        invokeMethod("tts.init", true);
 
-            try {
-              Locale locale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                      ? tts.getDefaultVoice().getLocale()
-                      : tts.getDefaultLanguage();
-              if (isLanguageAvailable(locale)) {
-                tts.setLanguage(locale);
-              }
-            } catch (NullPointerException | IllegalArgumentException e){
-              Log.d(tag, "getDefaultLocale: " + e.getMessage());
-            }
-          } else {
-            Log.d(tag, "Failed to initialize TextToSpeech");
+        try {
+          Locale locale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? tts.getDefaultVoice().getLocale()
+              : tts.getDefaultLanguage();
+          if (isLanguageAvailable(locale)) {
+            tts.setLanguage(locale);
           }
+        } catch (NullPointerException | IllegalArgumentException e) {
+          Log.d(tag, "getDefaultLocale: " + e.getMessage());
         }
-      };
+      } else {
+        Log.d(tag, "Failed to initialize TextToSpeech");
+      }
+    }
+  };
 
   public static void registerWith(Registrar registrar) {
     final MethodChannel channel = new MethodChannel(registrar.messenger(), "flutter_tts");
-    channel.setMethodCallHandler(new FlutterTtsPlugin(registrar.activeContext(), channel));
+    channel.setMethodCallHandler(new FlutterTtsPlugin(registrar, channel));
   }
 
   @Override
@@ -125,6 +125,10 @@ public class FlutterTtsPlugin implements MethodCallHandler {
       String language = ((HashMap) call.arguments()).get("language").toString();
       Locale locale = Locale.forLanguageTag(language);
       result.success(isLanguageAvailable(locale));
+    } else if (call.method.equals("installLanguage")) {
+      String language = ((HashMap) call.arguments()).get("language").toString();
+      Locale locale = Locale.forLanguageTag(language);
+      installLanguage(locale);
     } else {
       result.notImplemented();
     }
@@ -134,8 +138,21 @@ public class FlutterTtsPlugin implements MethodCallHandler {
     tts.setSpeechRate(rate);
   }
 
+  void installLanguage(Locale locale) {
+    int result = tts.setLanguage(locale);
+
+    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED
+        || result == TextToSpeech.ERROR_NOT_INSTALLED_YET) {
+      final Context context = registrar.activity();
+
+      Intent installIntent = new Intent();
+      installIntent.setAction(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA);
+      context.startActivity(installIntent);
+    }
+  }
+
   Boolean isLanguageAvailable(Locale locale) {
-      return tts.isLanguageAvailable(locale) > 0;
+    return tts.isLanguageAvailable(locale) > 0;
   }
 
   void setLanguage(String language, Result result) {
@@ -179,7 +196,7 @@ public class FlutterTtsPlugin implements MethodCallHandler {
       result.success(0);
     }
   }
- 
+
   void getVoices(Result result) {
     ArrayList<String> voices = new ArrayList<>();
     try {
@@ -187,7 +204,7 @@ public class FlutterTtsPlugin implements MethodCallHandler {
         voices.add(voice.getName());
       }
       result.success(voices);
-    } catch(NullPointerException e) {
+    } catch (NullPointerException e) {
       Log.d(tag, "getVoices: " + e.getMessage());
       result.success(null);
     }

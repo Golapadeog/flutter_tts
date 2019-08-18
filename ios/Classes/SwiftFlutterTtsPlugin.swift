@@ -75,6 +75,8 @@ public class SwiftFlutterTtsPlugin: NSObject, FlutterPlugin, AVSpeechSynthesizer
       let arg: Dictionary<String, String> = call.arguments as! Dictionary<String, String>
       self.isLanguageAvailable(language: arg["language"]! as String, result: result)
       break
+    case "installLanguage":
+      break
     case "getVoices":
       self.getVoices(result: result)
       break
