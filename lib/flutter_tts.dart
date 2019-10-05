@@ -67,6 +67,11 @@ class FlutterTts {
   /// ***Android supported only ***
   Future<dynamic> installLanguage(String language) => _channel.invokeMethod('installLanguage', <String, Object>{'language': language});
 
+  /// [Future] which invokes the platform specific method for setSilence
+  /// 0 means start the utterance immediately. If the value is greater than zero a silence period in milliseconds is set according to the parameter
+  Future<dynamic> setSilence(int timems) =>
+      _channel.invokeMethod('setSilence', timems ?? 0);
+
   void setStartHandler(VoidCallback callback) {
     startHandler = callback;
   }

@@ -10,18 +10,23 @@ import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 import android.util.Log;
-import io.flutter.plugin.common.MethodCall;
-import io.flutter.plugin.common.MethodChannel;
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
-import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry.Registrar;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.UUID;
 
-/** FlutterTtsPlugin */
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
+import io.flutter.plugin.common.MethodChannel.Result;
+import io.flutter.plugin.common.PluginRegistry.Registrar;
+
+/**
+ * FlutterTtsPlugin
+ */
 public class FlutterTtsPlugin implements MethodCallHandler {
+  private final Registrar registrar;
   private final Handler handler;
   private final MethodChannel channel;
   private TextToSpeech tts;
@@ -29,7 +34,8 @@ public class FlutterTtsPlugin implements MethodCallHandler {
   private final String googleTtsEngine = "com.google.android.tts";
   String uuid;
   Bundle bundle;
-  private final Registrar registrar;
+  private int silencems;
+  private static final String SILENCE_PREFIX = "SIL_";
 
   /** Plugin registration. */
   private FlutterTtsPlugin(Registrar registrar, MethodChannel channel) {
@@ -50,6 +56,8 @@ public class FlutterTtsPlugin implements MethodCallHandler {
 
     @Override
     public void onDone(String utteranceId) {
+      if (utteranceId != null && utteranceId.startsWith(SILENCE_PREFIX))
+        return;
       invokeMethod("speak.onComplete", true);
     }
 
@@ -129,13 +137,12 @@ public class FlutterTtsPlugin implements MethodCallHandler {
       String language = ((HashMap) call.arguments()).get("language").toString();
       Locale locale = Locale.forLanguageTag(language);
       installLanguage(locale);
+    } else if (call.method.equals("setSilence")) {
+      String silencems = call.arguments.toString();
+      this.silencems = Integer.parseInt(silencems);
     } else {
       result.notImplemented();
     }
-  }
-
-  void setSpeechRate(float rate) {
-    tts.setSpeechRate(rate);
   }
 
   void installLanguage(Locale locale) {
@@ -151,8 +158,12 @@ public class FlutterTtsPlugin implements MethodCallHandler {
     }
   }
 
+  void setSpeechRate(float rate) {
+    tts.setSpeechRate(rate);
+  }
+
   Boolean isLanguageAvailable(Locale locale) {
-    return tts.isLanguageAvailable(locale) > 0;
+    return tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE;
   }
 
   void setLanguage(String language, Result result) {
@@ -228,12 +239,17 @@ public class FlutterTtsPlugin implements MethodCallHandler {
     result.success(locales);
   }
 
-  void speak(String text) {
+  private void speak(String text) {
     uuid = UUID.randomUUID().toString();
-    tts.speak(text, TextToSpeech.QUEUE_FLUSH, bundle, uuid);
+    if (silencems > 0) {
+      tts.playSilentUtterance(silencems, TextToSpeech.QUEUE_FLUSH, SILENCE_PREFIX + uuid);
+      tts.speak(text, TextToSpeech.QUEUE_ADD, bundle, uuid);
+    } else {
+      tts.speak(text, TextToSpeech.QUEUE_FLUSH, bundle, uuid);
+    }
   }
 
-  void stop() {
+  private void stop() {
     tts.stop();
   }
 
